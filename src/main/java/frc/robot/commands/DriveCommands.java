@@ -10,6 +10,7 @@ package frc.robot.commands;
 import static frc.robot.subsystems.drive.DriveConstants.maxSpeedMetersPerSec;
 
 import edu.wpi.first.math.MathUtil;
+import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Transform2d;
@@ -21,7 +22,9 @@ import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.drive.DifferentialDrive;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
+import frc.robot.Constants;
 import frc.robot.subsystems.drive.Drive;
+import frc.robot.subsystems.drive.DriveConstants;
 import java.text.DecimalFormat;
 import java.text.NumberFormat;
 import java.util.LinkedList;
@@ -102,7 +105,66 @@ public class DriveCommands {
           // (runVelocity handles field-centric turning internally)
           ChassisSpeeds speeds =
               new ChassisSpeeds(linearVelocity.getX() * flip, linearVelocity.getY() * flip, omega);
-          drive.runVelocity(speeds);
+
+          ChassisSpeeds discreteSpeeds = ChassisSpeeds.discretize(speeds, Constants.dtSeconds);
+          // only look at omega controller if the other 2 velocites are zero
+
+          // get stick direction and pid to direction and then drive both motors forward
+
+          // runClosedLoop();
+
+          PIDController rotationPID =
+              new PIDController(
+                  DriveConstants.turnKp, DriveConstants.turnKi, DriveConstants.turnKd);
+          rotationPID.enableContinuousInput(-Math.PI, Math.PI);
+          Rotation2d stickDirection =
+              new Rotation2d(discreteSpeeds.vxMetersPerSecond, discreteSpeeds.vyMetersPerSecond);
+          //         .plus(
+          //             new Rotation2d(
+          //                 Math.PI / 2.0)); // have to add pi/2 because the stick direction is -
+          // pi/2
+          // when
+          // // pushed forward but we want that to be 0 in the robot frame
+          Rotation2d robotDirection = drive.getRotation();
+
+          Logger.recordOutput("Drive/DiscreteSpeeds", discreteSpeeds);
+          Logger.recordOutput("Drive/stickDirection", stickDirection);
+          Logger.recordOutput("Drive/robotDirection", robotDirection);
+
+          double forwardSpeed =
+              Math.hypot(discreteSpeeds.vxMetersPerSecond, discreteSpeeds.vyMetersPerSecond);
+          Logger.recordOutput("Drive/forwardSpeed", forwardSpeed);
+
+          double joyStickOmega = MathUtil.applyDeadband(omegaSupplier.getAsDouble(), DEADBAND);
+
+          // Compute shortest angular difference (properly wrapped to [-π, π])
+          double thetaError =
+              MathUtil.angleModulus(stickDirection.getRadians() - robotDirection.getRadians());
+
+          // If stick direction is more than 90° from robot heading, drive backward instead
+          double setpoint = stickDirection.getRadians();
+          if (Math.abs(thetaError) > (Math.PI / 2.0)) {
+            setpoint = MathUtil.angleModulus(setpoint + Math.PI);
+            forwardSpeed = -forwardSpeed;
+          }
+
+          // Default: drive at forwardSpeed with joystick omega
+          var fieldOrientedSpeeds =
+              DifferentialDrive.arcadeDriveIK(forwardSpeed, joyStickOmega, false);
+
+          // PID turns until angle is within tolerance
+          if (Math.abs(thetaError) > DriveConstants.turnToleranceRad
+              && Math.abs(forwardSpeed) > 0.01) {
+            fieldOrientedSpeeds =
+                DifferentialDrive.arcadeDriveIK(
+                    forwardSpeed,
+                    rotationPID.calculate(robotDirection.getRadians(), setpoint),
+                    false);
+          }
+
+          drive.runClosedLoop(
+              fieldOrientedSpeeds.left * maxSpeedMetersPerSec,
+              fieldOrientedSpeeds.right * maxSpeedMetersPerSec);
         },
         drive);
   }

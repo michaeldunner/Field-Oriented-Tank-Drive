@@ -14,6 +14,7 @@ import edu.wpi.first.math.util.Units;
 
 public class DriveConstants {
   public static final double maxSpeedMetersPerSec = 4.0;
+  public static final double maxAngularSpeedRadPerSec = 10.0;
   public static final double trackWidth = Units.inchesToMeters(26.0);
 
   // Device CAN IDs
@@ -41,6 +42,13 @@ public class DriveConstants {
   public static final double simKd = 0.0;
   public static final double simKs = 0.0;
   public static final double simKv = 0.227;
+
+  // Turn PID configuration
+  public static final double turnKp = 1.0;
+  public static final double turnKi = 0.0;
+  public static final double turnKd = 0.0;
+
+  public static final double turnToleranceRad = Units.degreesToRadians(1.0);
 
   // PathPlanner configuration
   public static final double robotMassKg = 74.088;

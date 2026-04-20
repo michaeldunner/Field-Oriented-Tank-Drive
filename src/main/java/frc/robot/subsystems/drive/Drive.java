@@ -14,6 +14,7 @@ import com.pathplanner.lib.auto.AutoBuilder;
 import com.pathplanner.lib.controllers.PPLTVController;
 import com.pathplanner.lib.pathfinding.Pathfinding;
 import com.pathplanner.lib.util.PathPlannerLogging;
+import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.estimator.DifferentialDrivePoseEstimator;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
@@ -23,6 +24,7 @@ import edu.wpi.first.math.kinematics.DifferentialDriveKinematics;
 import edu.wpi.first.math.kinematics.DifferentialDriveWheelSpeeds;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.DriverStation.Alliance;
+import edu.wpi.first.wpilibj.drive.DifferentialDrive;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine;
@@ -135,6 +137,54 @@ public class Drive extends SubsystemBase {
   /** Runs the drive in open loop. */
   public void runOpenLoop(double leftVolts, double rightVolts) {
     io.setVoltage(leftVolts, rightVolts);
+  }
+
+  /** Runs the drive at the desired chassis speeds. */
+  public void runVelocity(ChassisSpeeds speeds) {
+    ChassisSpeeds discreteSpeeds = ChassisSpeeds.discretize(speeds, Constants.dtSeconds);
+    // only look at omega controller if the other 2 velocites are zero
+
+    // get stick direction and pid to direction and then drive both motors forward
+
+    // runClosedLoop();
+
+    PIDController rotationPID =
+        new PIDController(DriveConstants.turnKp, DriveConstants.turnKi, DriveConstants.turnKd);
+    rotationPID.enableContinuousInput(-Math.PI, Math.PI);
+    Rotation2d stickDirection =
+        new Rotation2d(discreteSpeeds.vxMetersPerSecond, discreteSpeeds.vyMetersPerSecond);
+    //         .plus(
+    //             new Rotation2d(
+    //                 Math.PI / 2.0)); // have to add pi/2 because the stick direction is - pi/2
+    // when
+    // // pushed forward but we want that to be 0 in the robot frame
+    Rotation2d robotDirection = getRotation();
+
+    Logger.recordOutput("Drive/DiscreteSpeeds", discreteSpeeds);
+    Logger.recordOutput("Drive/stickDirection", stickDirection);
+    Logger.recordOutput("Drive/robotDirection", robotDirection);
+
+    double forwardSpeed =
+        Math.hypot(discreteSpeeds.vxMetersPerSecond, discreteSpeeds.vyMetersPerSecond);
+    Logger.recordOutput("Drive/forwardSpeed", forwardSpeed);
+
+    var fieldOrientedSpeeds = DifferentialDrive.arcadeDriveIK(forwardSpeed, 0.0, false);
+    ;
+
+    // PID turns until angle is within tolerance
+    if (Math.abs(stickDirection.getRadians() - robotDirection.getRadians())
+            > DriveConstants.turnToleranceRad
+        && forwardSpeed > 0.01) {
+      fieldOrientedSpeeds =
+          DifferentialDrive.arcadeDriveIK(
+              forwardSpeed,
+              rotationPID.calculate(robotDirection.getRadians(), stickDirection.getRadians()),
+              false);
+    }
+
+    runClosedLoop(
+        fieldOrientedSpeeds.left * maxSpeedMetersPerSec,
+        fieldOrientedSpeeds.right * maxSpeedMetersPerSec);
   }
 
   /** Stops the drive. */

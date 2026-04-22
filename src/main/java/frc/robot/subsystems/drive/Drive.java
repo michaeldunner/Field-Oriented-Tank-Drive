@@ -33,10 +33,37 @@ import org.littletonrobotics.junction.AutoLogOutput;
 import org.littletonrobotics.junction.Logger;
 
 public class Drive extends SubsystemBase {
+
   private final DriveIO io;
   private final DriveIOInputsAutoLogged inputs = new DriveIOInputsAutoLogged();
   private final GyroIO gyroIO;
   private final GyroIOInputsAutoLogged gyroInputs = new GyroIOInputsAutoLogged();
+
+  private static Drive INSTANCE = null;
+
+  public static Drive getInstance() {
+    if (INSTANCE == null) {
+      switch (Constants.currentMode) {
+        case REAL:
+          // Real robot, instantiate hardware IO implementations
+          INSTANCE = new Drive(new DriveIOSpark() {}, new GyroIONavX() {});
+
+          break;
+
+        case SIM:
+          // Sim robot, instantiate physics sim IO implementations
+          INSTANCE = new Drive(new DriveIOSim() {}, new GyroIO() {});
+          break;
+
+        default:
+          // Replayed robot, disable IO implementations
+          INSTANCE = new Drive(new DriveIO() {}, new GyroIO() {});
+          break;
+      }
+    }
+
+    return INSTANCE;
+  }
 
   private final DifferentialDriveKinematics kinematics =
       new DifferentialDriveKinematics(trackWidth);
@@ -254,5 +281,20 @@ public class Drive extends SubsystemBase {
   /** Returns the average velocity in radians/second. */
   public double getCharacterizationVelocity() {
     return (inputs.leftVelocityRadPerSec + inputs.rightVelocityRadPerSec) / 2.0;
+  }
+
+  public ChassisSpeeds getChassisSpeeds() {
+    var wheelSpeeds =
+        new DifferentialDriveWheelSpeeds(
+            getLeftVelocityMetersPerSec(), getRightVelocityMetersPerSec());
+    var chassisSpeeds = kinematics.toChassisSpeeds(wheelSpeeds);
+    return new ChassisSpeeds(
+        chassisSpeeds.vxMetersPerSecond,
+        chassisSpeeds.vyMetersPerSecond,
+        chassisSpeeds.omegaRadiansPerSecond);
+  }
+
+  public ChassisSpeeds getFieldRelativeChassisSpeeds() {
+    return ChassisSpeeds.fromFieldRelativeSpeeds(getChassisSpeeds(), getRotation());
   }
 }

@@ -9,17 +9,14 @@ package frc.robot;
 
 import com.pathplanner.lib.auto.AutoBuilder;
 import edu.wpi.first.wpilibj.GenericHID;
-import edu.wpi.first.wpilibj.PS5Controller;
 import edu.wpi.first.wpilibj.XboxController;
 import edu.wpi.first.wpilibj2.command.Command;
+import edu.wpi.first.wpilibj2.command.button.CommandPS5Controller;
 import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine;
+import frc.robot.commands.AssistedDriveCommand;
+import frc.robot.commands.DefaultCommands;
 import frc.robot.commands.DriveCommands;
 import frc.robot.subsystems.drive.Drive;
-import frc.robot.subsystems.drive.DriveIO;
-import frc.robot.subsystems.drive.DriveIOSim;
-import frc.robot.subsystems.drive.DriveIOSpark;
-import frc.robot.subsystems.drive.GyroIO;
-import frc.robot.subsystems.drive.GyroIONavX;
 import org.littletonrobotics.junction.networktables.LoggedDashboardChooser;
 
 /**
@@ -33,29 +30,14 @@ public class RobotContainer {
   private final Drive drive;
 
   // Controller
-  private final PS5Controller controller = new PS5Controller(0);
+  private final CommandPS5Controller controller = new CommandPS5Controller(0);
 
   // Dashboard inputs
   private final LoggedDashboardChooser<Command> autoChooser;
 
   /** The container for the robot. Contains subsystems, OI devices, and commands. */
   public RobotContainer() {
-    switch (Constants.currentMode) {
-      case REAL:
-        // Real robot, instantiate hardware IO implementations
-        drive = new Drive(new DriveIOSpark(), new GyroIONavX());
-        break;
-
-      case SIM:
-        // Sim robot, instantiate physics sim IO implementations
-        drive = new Drive(new DriveIOSim(), new GyroIO() {});
-        break;
-
-      default:
-        // Replayed robot, disable IO implementations
-        drive = new Drive(new DriveIO() {}, new GyroIO() {});
-        break;
-    }
+    drive = Drive.getInstance();
 
     // Set up auto routines
     autoChooser = new LoggedDashboardChooser<>("Auto Choices", AutoBuilder.buildAutoChooser());
@@ -89,12 +71,13 @@ public class RobotContainer {
     // drive.setDefaultCommand(
     //     DriveCommands.arcadeDrive(
     //         drive, () -> -controller.getLeftY(), () -> -controller.getRightX()));
-    drive.setDefaultCommand(
-        DriveCommands.fieldOrientedDrive(
-            drive,
-            () -> controller.getLeftY(),
-            () -> controller.getLeftX(),
-            () -> -controller.getRightX()));
+    DefaultCommands.setDefaultDriveCommand(new AssistedDriveCommand(controller));
+    // drive.setDefaultCommand(
+    //     DriveCommands.fieldOrientedDrive(
+    //         drive,
+    //         () -> controller.getLeftY(),
+    //         () -> controller.getLeftX(),
+    //         () -> -controller.getRightX()));
   }
 
   /**

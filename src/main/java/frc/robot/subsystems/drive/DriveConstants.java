@@ -74,7 +74,7 @@ public class DriveConstants {
   public static final double trenchAlignPositionTolerance = Units.inchesToMeters(4.0);
   public static final double rotationAlignTolerance = Units.degreesToRadians(5.0);
   public static final double trenchAlignTimeSeconds = 0.5;
-  public static final double driveAssistTrenchCenteringCorrectionFactor = Math.PI;
+  public static final double driveAssistTrenchCenteringCorrectionFactor = Math.PI / 2.0;
 
   // Physical Robot Constants
   public static final double fullRobotLength = Units.inchesToMeters(27.5);

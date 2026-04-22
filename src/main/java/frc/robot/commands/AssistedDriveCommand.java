@@ -109,94 +109,62 @@ public class AssistedDriveCommand extends Command {
   // Called every time the scheduler runs while the command is scheduled.
   @Override
   public void execute() {
-    // Translation2d linearVelocity =
-    //     getLinearVelocityFromJoysticks(xSupplier.getAsDouble(), ySupplier.getAsDouble());
-    // linearVelocity = linearVelocity.times(driveSubsystem.getMaxLinearSpeedMetersPerSec());
-    // linearVelocity = driveLimiter.calculate(linearVelocity);
-
-    // double omega =
-    //     MathUtil.applyDeadband(omegaSupplier.getAsDouble(),
-    // ControllerConstants.controllerDeadband);
-    // omega = Math.copySign(omega * omega, omega); // square for more precise rotation control
 
     final double DEADBAND = 0.1;
 
+    Translation2d linearVelocity =
+        getLinearVelocityFromJoysticks(xSupplier.getAsDouble(), ySupplier.getAsDouble());
+    Logger.recordOutput("Drive/linearVelocity", linearVelocity);
+
+    // Apply rotation deadband
+    double omega = MathUtil.applyDeadband(omegaSupplier.getAsDouble(), DEADBAND);
+
+    // Square rotation value for more precise control
+    omega = Math.copySign(omega * omega, omega);
+
+    boolean isFlipped =
+        DriverStation.getAlliance().isPresent()
+            && DriverStation.getAlliance().get() == Alliance.Red;
+    double flip = isFlipped ? -1.0 : 1.0;
+
+    Rotation2d robotDirection = drive.getRotation();
+
+    double joyStickOmega = MathUtil.applyDeadband(omegaSupplier.getAsDouble(), Constants.DEADBAND);
+
+    ChassisSpeeds speeds =
+        new ChassisSpeeds(linearVelocity.getX() * flip, linearVelocity.getY() * flip, omega);
+
+    ChassisSpeeds discreteSpeeds = ChassisSpeeds.discretize(speeds, Constants.dtSeconds);
+
+    Rotation2d stickDirection =
+        new Rotation2d(discreteSpeeds.vxMetersPerSecond, discreteSpeeds.vyMetersPerSecond);
+
+    double forwardSpeed =
+        Math.hypot(discreteSpeeds.vxMetersPerSecond, discreteSpeeds.vyMetersPerSecond);
+
+    double thetaError =
+        MathUtil.angleModulus(stickDirection.getRadians() - robotDirection.getRadians());
+
+    // If stick direction is more than 90° from robot heading, drive backward instead
+    double setpoint = stickDirection.getRadians();
+    if (Math.abs(thetaError) > (Math.PI / 2.0)) {
+      setpoint = MathUtil.angleModulus(setpoint + Math.PI);
+      forwardSpeed = -forwardSpeed;
+      thetaError = MathUtil.angleModulus(setpoint - robotDirection.getRadians());
+    }
+
+    DifferentialDrive.WheelSpeeds fieldOrientedSpeeds = new DifferentialDrive.WheelSpeeds();
+
     switch (currentDriveMode) {
       case NORMAL:
-        // Get linear velocity = get linear velocity
-        Translation2d linearVelocity =
-            getLinearVelocityFromJoysticks(xSupplier.getAsDouble(), ySupplier.getAsDouble());
-        Logger.recordOutput("Drive/linearVelocity", linearVelocity);
-        // Apply rotation deadband
-        double omega = MathUtil.applyDeadband(omegaSupplier.getAsDouble(), DEADBAND);
+        fieldOrientedSpeeds = DifferentialDrive.arcadeDriveIK(forwardSpeed, joyStickOmega, false);
 
-        // Square rotation value for more precise control
-        omega = Math.copySign(omega * omega, omega);
-        // Flip joystick direction for Red alliance
-        // (negate vx/vy to rotate 180°, so "forward" points toward Red wall)
-        boolean isFlipped =
-            DriverStation.getAlliance().isPresent()
-                && DriverStation.getAlliance().get() == Alliance.Red;
-        double flip = isFlipped ? -1.0 : 1.0;
-
-        // Pass field-relative speeds directly to runVelocity
-        // (runVelocity handles field-centric turning internally)
-        ChassisSpeeds speeds =
-            new ChassisSpeeds(linearVelocity.getX() * flip, linearVelocity.getY() * flip, omega);
-
-        ChassisSpeeds discreteSpeeds = ChassisSpeeds.discretize(speeds, Constants.dtSeconds);
-        // only look at omega controller if the other 2 velocites are zero
-
-        // get stick direction and pid to direction and then drive both motors forward
-
-        // runClosedLoop();
-
-        PIDController rotationPID =
-            new PIDController(DriveConstants.turnKp, DriveConstants.turnKi, DriveConstants.turnKd);
-        rotationPID.enableContinuousInput(-Math.PI, Math.PI);
-        Rotation2d stickDirection =
-            new Rotation2d(discreteSpeeds.vxMetersPerSecond, discreteSpeeds.vyMetersPerSecond);
-        //         .plus(
-        //             new Rotation2d(
-        //                 Math.PI / 2.0)); // have to add pi/2 because the stick direction is -
-        // pi/2
-        // when
-        // // pushed forward but we want that to be 0 in the robot frame
-        Rotation2d robotDirection = drive.getRotation();
-
-        Logger.recordOutput("Drive/DiscreteSpeeds", discreteSpeeds);
-        Logger.recordOutput("Drive/stickDirection", stickDirection);
-        Logger.recordOutput("Drive/robotDirection", robotDirection);
-
-        double forwardSpeed =
-            Math.hypot(discreteSpeeds.vxMetersPerSecond, discreteSpeeds.vyMetersPerSecond);
-        Logger.recordOutput("Drive/forwardSpeed", forwardSpeed);
-
-        double joyStickOmega =
-            MathUtil.applyDeadband(omegaSupplier.getAsDouble(), Constants.DEADBAND);
-
-        // Compute shortest angular difference (properly wrapped to [-π, π])
-        double thetaError =
-            MathUtil.angleModulus(stickDirection.getRadians() - robotDirection.getRadians());
-
-        // If stick direction is more than 90° from robot heading, drive backward instead
-        double setpoint = stickDirection.getRadians();
-        if (Math.abs(thetaError) > (Math.PI / 2.0)) {
-          setpoint = MathUtil.angleModulus(setpoint + Math.PI);
-          forwardSpeed = -forwardSpeed;
-        }
-
-        // Default: drive at forwardSpeed with joystick omega
-        var fieldOrientedSpeeds =
-            DifferentialDrive.arcadeDriveIK(forwardSpeed, joyStickOmega, false);
-
-        // PID turns until angle is within tolerance
         if (Math.abs(thetaError) > DriveConstants.turnToleranceRad
             && Math.abs(forwardSpeed) > 0.01) {
           fieldOrientedSpeeds =
               DifferentialDrive.arcadeDriveIK(
                   forwardSpeed,
-                  rotationPID.calculate(robotDirection.getRadians(), setpoint),
+                  rotationController.calculate(robotDirection.getRadians(), setpoint),
                   false);
         }
 
@@ -204,137 +172,33 @@ public class AssistedDriveCommand extends Command {
             fieldOrientedSpeeds.left * DriveConstants.maxSpeedMetersPerSec,
             fieldOrientedSpeeds.right * DriveConstants.maxSpeedMetersPerSec);
         break;
+
       case TRENCH_LOCK:
-        // Get linear velocity = get linear velocity
-        Translation2d trenchLinearVelocity =
-            getLinearVelocityFromJoysticks(xSupplier.getAsDouble(), ySupplier.getAsDouble());
-        Logger.recordOutput("Drive/trenchLinearVelocity", trenchLinearVelocity);
-        // Apply rotation deadband
-        double trenchOmega = MathUtil.applyDeadband(omegaSupplier.getAsDouble(), DEADBAND);
-
-        // Square rotation value for more precise control
-        trenchOmega = Math.copySign(trenchOmega * trenchOmega, trenchOmega);
-        // Flip joystick direction for Red alliance
-        // (negate vx/vy to rotate 180°, so "forward" points toward Red wall)
-        boolean trenchIsFlipped =
-            DriverStation.getAlliance().isPresent()
-                && DriverStation.getAlliance().get() == Alliance.Red;
-        double trenchFlip = trenchIsFlipped ? -1.0 : 1.0;
-
-        // Pass field-relative speeds directly to runVelocity
-        // (runVelocity handles field-centric turning internally)
-        ChassisSpeeds trenchSpeeds =
-            new ChassisSpeeds(
-                trenchLinearVelocity.getX() * trenchFlip,
-                trenchLinearVelocity.getY() * trenchFlip,
-                trenchOmega);
-
-        ChassisSpeeds trenchDiscreteSpeeds =
-            ChassisSpeeds.discretize(trenchSpeeds, Constants.dtSeconds);
-        // only look at omega controller if the other 2 velocites are zero
-
-        // get stick direction and pid to direction and then drive both motors forward
-
-        // runClosedLoop();
-
-        PIDController trenchRotationPID =
-            new PIDController(
-                DriveConstants.driveAssistKp,
-                DriveConstants.driveAssistKi,
-                DriveConstants.driveAssistKd);
-        trenchRotationPID.enableContinuousInput(-Math.PI, Math.PI);
-        Rotation2d trenchStickDirection =
-            new Rotation2d(
-                trenchDiscreteSpeeds.vxMetersPerSecond, trenchDiscreteSpeeds.vyMetersPerSecond);
-        //         .plus(
-        //             new Rotation2d(
-        //                 Math.PI / 2.0)); // have to add pi/2 because the stick direction is -
-        // pi/2
-        // when
-        // // pushed forward but we want that to be 0 in the robot frame
-        Rotation2d trenchRobotDirection = drive.getRotation();
-
-        Logger.recordOutput("Drive/DiscreteSpeeds", trenchDiscreteSpeeds);
-        Logger.recordOutput("Drive/trenchStickDirection", trenchStickDirection);
-        Logger.recordOutput("Drive/trenchRobotDirection", trenchRobotDirection);
-        double trenchForwardSpeed =
-            Math.hypot(
-                trenchDiscreteSpeeds.vxMetersPerSecond, trenchDiscreteSpeeds.vyMetersPerSecond);
-        Logger.recordOutput("Drive/trenchForwardSpeed", trenchForwardSpeed);
-
-        double trenchJoyStickOmega =
-            MathUtil.applyDeadband(omegaSupplier.getAsDouble(), Constants.DEADBAND);
-
-        // Compute shortest angular difference (properly wrapped to [-π, π])
-        double trenchThetaError =
-            MathUtil.angleModulus(
-                trenchStickDirection.getRadians() - trenchRobotDirection.getRadians());
-        // If stick direction is more than 90° from robot heading, drive backward instead
-        double trenchSetpoint = trenchStickDirection.getRadians();
-        if (Math.abs(trenchThetaError) > (Math.PI / 2.0)) {
-          trenchSetpoint = MathUtil.angleModulus(trenchSetpoint + Math.PI);
-          trenchForwardSpeed = -trenchForwardSpeed;
-        }
-
-        // Default: drive at forwardSpeed with joystick omega
-        var trenchFieldOrientedSpeeds =
-            DifferentialDrive.arcadeDriveIK(trenchForwardSpeed, trenchJoyStickOmega, false);
-
         double trenchYError =
             rotationController.calculate(drive.getPose().getY(), getTrenchY().in(Meters));
         Logger.recordOutput("Drive/trenchYError", trenchYError);
 
-        double centeringCorrection = (drive.getPose().getY() - getTrenchY().in(Meters));
+        double centeringCorrection = (getTrenchY().in(Meters) - drive.getPose().getY());
 
         double snapAngle = getTrenchLockAngle().getRadians();
-        // +1 when facing 0°, -1 when facing 180° — flips correction
-        // since robot-right maps to opposite field-Y directions at each heading
+
         double headingFactor = Math.cos(snapAngle);
 
-        // PID turns until angle is within tolerance
-        if (Math.abs(trenchThetaError) > DriveConstants.turnToleranceRad) {
-          trenchFieldOrientedSpeeds =
-              DifferentialDrive.arcadeDriveIK(
-                  trenchForwardSpeed,
-                  trenchRotationPID.calculate(
-                      trenchRobotDirection.getRadians(),
-                      snapAngle
-                          + (centeringCorrection
-                              * DriveConstants.driveAssistTrenchCenteringCorrectionFactor
-                              * Math.signum(trenchForwardSpeed)
-                              * headingFactor
-                              * -0.5)),
-                  false);
-        }
+        fieldOrientedSpeeds =
+            DifferentialDrive.arcadeDriveIK(
+                forwardSpeed,
+                rotationController.calculate(
+                    robotDirection.getRadians(),
+                    snapAngle
+                        + (centeringCorrection
+                            * DriveConstants.driveAssistTrenchCenteringCorrectionFactor
+                            * Math.signum(forwardSpeed)
+                            * headingFactor)),
+                false);
 
         drive.runClosedLoop(
-            trenchFieldOrientedSpeeds.left * DriveConstants.maxSpeedMetersPerSec,
-            trenchFieldOrientedSpeeds.right * DriveConstants.maxSpeedMetersPerSec);
-        // rotationController.setSetpoint(getTrenchY().in(Meters));
-        // // Clamp the y velocity to the max linear speed
-        // double yVel =
-        //     MathUtil.clamp(
-        //         rotationController.calculate(driveSubsystem.getPose().getY()),
-        //         -driveSubsystem.getMaxLinearSpeedMetersPerSec(),
-        //         driveSubsystem.getMaxLinearSpeedMetersPerSec());
-        // if (rotationController.atSetpoint()) {
-        //   yVel = 0;
-        // }
-        // rotationController.setSetpoint(getTrenchLockAngle().getRadians());
-        // // Clamp the rotation speed to the max angular speed
-        // double rotSpeedToStraight =
-        //     MathUtil.clamp(
-        //         rotationController.calculate(driveSubsystem.getRotation().getRadians()),
-        //         -driveSubsystem.getMaxAngularSpeedRadPerSec(),
-        //         driveSubsystem.getMaxAngularSpeedRadPerSec());
-        // if (rotationController.atSetpoint()) {
-        //   rotSpeedToStraight = 0;
-        // }
-        // driveSubsystem.runVelocityFieldRelative(
-        //     new ChassisSpeeds(
-        //         MetersPerSecond.of(linearVelocity.getX()),
-        //         MetersPerSecond.of(yVel),
-        //         RadiansPerSecond.of(rotSpeedToStraight)));
+            fieldOrientedSpeeds.left * DriveConstants.maxSpeedMetersPerSec,
+            fieldOrientedSpeeds.right * DriveConstants.maxSpeedMetersPerSec);
         break;
     }
   }
@@ -352,9 +216,6 @@ public class AssistedDriveCommand extends Command {
   private enum DriveMode {
     NORMAL,
     TRENCH_LOCK,
-    BUMP_LOCK,
-    TOWER_LOCK,
-    HUB_LOCK
   }
 
   private static Translation2d getLinearVelocityFromJoysticks(double x, double y) {

@@ -66,4 +66,7 @@ public class DriveConstants {
               currentLimit,
               2),
           trackWidth);
+
+// Physical Robot Constants
+ public static final double fullRobotLength = Units.inchesToMeters(27.5);
 }

@@ -206,7 +206,8 @@ public class AssistedDriveCommand extends Command {
 
         shootingAngle =
             Math.atan2(
-                target.getY() - drive.getPose().getY(), target.getX() - drive.getPose().getX());
+                    target.getY() - drive.getPose().getY(), target.getX() - drive.getPose().getX())
+                + Math.PI;
 
         fieldOrientedSpeeds =
             DifferentialDrive.arcadeDriveIK(

@@ -1,7 +1,7 @@
 {
  "name":"2026Paths",
  "version":2,
- "type":"Swerve",
+ "type":"Differential",
  "variables":{
   "expressions":{},
   "poses":{}
@@ -70,8 +70,8 @@
    }
   },
   "differentialTrackWidth":{
-   "exp":"22 in",
-   "val":0.5588
+   "exp":"26 in",
+   "val":0.6604
   }
  },
  "generationFeatures":[],

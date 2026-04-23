@@ -43,6 +43,8 @@ public class AssistedDriveCommand extends Command {
 
   @AutoLogOutput private final Trigger inTrenchZoneTrigger;
 
+  @AutoLogOutput private final Trigger shootingTrigger;
+
   private final PIDController rotationController =
       new PIDController(DriveConstants.turnKp, DriveConstants.turnKi, DriveConstants.turnKd);
 
@@ -64,9 +66,14 @@ public class AssistedDriveCommand extends Command {
                 Seconds.of(DriveConstants.trenchAlignTimeSeconds))
             .debounce(0.1);
 
+    shootingTrigger = controller.R2().debounce(0.1);
+
     inTrenchZoneTrigger.onTrue(updateDriveMode(DriveMode.TRENCH_LOCK));
 
     inTrenchZoneTrigger.onFalse(updateDriveMode(DriveMode.NORMAL));
+
+    shootingTrigger.onTrue(updateDriveMode(DriveMode.SHOOTING));
+    shootingTrigger.onFalse(updateDriveMode(DriveMode.NORMAL));
 
     addRequirements(drive);
 
@@ -86,7 +93,7 @@ public class AssistedDriveCommand extends Command {
     return GeometryUtil.getNearest180Rotation(drive.getRotation());
   }
 
-  private Command updateDriveMode(DriveMode driveMode) {
+  public Command updateDriveMode(DriveMode driveMode) {
     return Commands.runOnce(
         () -> {
           currentDriveMode = driveMode;
@@ -155,6 +162,11 @@ public class AssistedDriveCommand extends Command {
 
     DifferentialDrive.WheelSpeeds fieldOrientedSpeeds = new DifferentialDrive.WheelSpeeds();
 
+    Translation2d target;
+    double shootingAngle;
+
+    Logger.recordOutput("Drive/driveMode", currentDriveMode);
+
     switch (currentDriveMode) {
       case NORMAL:
         fieldOrientedSpeeds = DifferentialDrive.arcadeDriveIK(forwardSpeed, joyStickOmega, false);
@@ -168,9 +180,6 @@ public class AssistedDriveCommand extends Command {
                   false);
         }
 
-        drive.runClosedLoop(
-            fieldOrientedSpeeds.left * DriveConstants.maxSpeedMetersPerSec,
-            fieldOrientedSpeeds.right * DriveConstants.maxSpeedMetersPerSec);
         break;
 
       case TRENCH_LOCK:
@@ -196,11 +205,25 @@ public class AssistedDriveCommand extends Command {
                             * headingFactor)),
                 false);
 
-        drive.runClosedLoop(
-            fieldOrientedSpeeds.left * DriveConstants.maxSpeedMetersPerSec,
-            fieldOrientedSpeeds.right * DriveConstants.maxSpeedMetersPerSec);
+        break;
+
+      case SHOOTING:
+        target = FieldConstants.getTurretTarget(drive.getPose());
+
+        shootingAngle =
+            Math.atan2(
+                target.getY() - drive.getPose().getY(), target.getX() - drive.getPose().getX());
+
+        fieldOrientedSpeeds =
+            DifferentialDrive.arcadeDriveIK(
+                0.0,
+                rotationController.calculate(robotDirection.getRadians(), shootingAngle),
+                false);
         break;
     }
+    drive.runClosedLoop(
+        fieldOrientedSpeeds.left * DriveConstants.maxSpeedMetersPerSec,
+        fieldOrientedSpeeds.right * DriveConstants.maxSpeedMetersPerSec);
   }
 
   // Called once the command ends or is interrupted.
@@ -213,9 +236,10 @@ public class AssistedDriveCommand extends Command {
     return false;
   }
 
-  private enum DriveMode {
+  public enum DriveMode {
     NORMAL,
     TRENCH_LOCK,
+    SHOOTING
   }
 
   private static Translation2d getLinearVelocityFromJoysticks(double x, double y) {

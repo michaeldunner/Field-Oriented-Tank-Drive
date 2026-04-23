@@ -35,6 +35,8 @@ public class RobotContainer {
   // Dashboard inputs
   private final LoggedDashboardChooser<Command> autoChooser;
 
+  private final AssistedDriveCommand assistedDriveCommand = new AssistedDriveCommand(controller);
+
   /** The container for the robot. Contains subsystems, OI devices, and commands. */
   public RobotContainer() {
     drive = Drive.getInstance();
@@ -67,7 +69,14 @@ public class RobotContainer {
    * edu.wpi.first.wpilibj2.command.button.JoystickButton}.
    */
   private void configureButtonBindings() {
-    DefaultCommands.setDefaultDriveCommand(new AssistedDriveCommand(controller));
+    DefaultCommands.setDefaultDriveCommand(assistedDriveCommand);
+
+    controller
+        .R2()
+        .onTrue(assistedDriveCommand.updateDriveMode(AssistedDriveCommand.DriveMode.SHOOTING));
+    controller
+        .R2()
+        .onFalse(assistedDriveCommand.updateDriveMode(AssistedDriveCommand.DriveMode.NORMAL));
   }
 
   /**

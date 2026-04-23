@@ -43,8 +43,6 @@ public class AssistedDriveCommand extends Command {
 
   @AutoLogOutput private final Trigger inTrenchZoneTrigger;
 
-  @AutoLogOutput private final Trigger shootingTrigger;
-
   private final PIDController rotationController =
       new PIDController(DriveConstants.turnKp, DriveConstants.turnKi, DriveConstants.turnKd);
 
@@ -66,14 +64,9 @@ public class AssistedDriveCommand extends Command {
                 Seconds.of(DriveConstants.trenchAlignTimeSeconds))
             .debounce(0.1);
 
-    shootingTrigger = controller.R2().debounce(0.1);
-
     inTrenchZoneTrigger.onTrue(updateDriveMode(DriveMode.TRENCH_LOCK));
 
     inTrenchZoneTrigger.onFalse(updateDriveMode(DriveMode.NORMAL));
-
-    shootingTrigger.onTrue(updateDriveMode(DriveMode.SHOOTING));
-    shootingTrigger.onFalse(updateDriveMode(DriveMode.NORMAL));
 
     addRequirements(drive);
 
@@ -207,6 +200,7 @@ public class AssistedDriveCommand extends Command {
 
         break;
 
+        // shooting and passing are the same mode, they just have different targets
       case SHOOTING:
         target = FieldConstants.getTurretTarget(drive.getPose());
 
